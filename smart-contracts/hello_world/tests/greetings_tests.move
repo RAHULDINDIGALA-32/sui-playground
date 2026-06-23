@@ -1,142 +1,85 @@
 #[test_only]
-module hello_world::greeting_tests {
+module hello_world::greetings_tests;
 
-    use std::unit_test::assert_eq;
-    use std::string::{Self, String};
-    use hello_world::greeting::{Self, Greeting};
-    use sui::test_scenario::{Self as ts, Ctx};
-    use sui::object;
-    use sui::transfer;
+use hello_world::greeting::{Self, Greeting};
+use std::string;
+use sui::test_scenario::{Self as ts};
 
-    #[test]
-    fun test_greeting_creation() {
-        let mut scenario = ts::begin(@0x1);
-        let ctx = ts::ctx(&mut scenario);
+const ADMIN: address = @0xA;
+const USER: address = @0xB;
 
-        // Call new to create a greeting
-        greeting::new(ctx);
+#[test]
+fun new_creates_shared_greeting_with_default_text() {
+    let mut scenario = ts::begin(ADMIN);
 
-        // Verify the greeting was created and shared
-        let greeting_obj = ts::take_shared<Greeting>(&scenario);
-        assert_eq(greeting_obj.text, string::utf8(b"Hello World"));
-        
-        ts::return_shared(greeting_obj);
-        ts::end(scenario);
-    }
+    greeting::new(scenario.ctx());
 
-    #[test]
-    fun test_greeting_initial_text() {
-        let mut scenario = ts::begin(@0x1);
-        let ctx = ts::ctx(&mut scenario);
+    scenario.next_tx(ADMIN);
+    {
+        assert!(ts::has_most_recent_shared<Greeting>());
 
-        greeting::new(ctx);
+        let greeting = scenario.take_shared<Greeting>();
+        assert!(greeting.text() == b"Hello World".to_string());
 
-        let greeting_obj = ts::take_shared<Greeting>(&scenario);
-        let text = greeting_obj.text;
-        
-        // Verify the initial text is exactly "Hello World"
-        assert_eq(text, string::utf8(b"Hello World"));
-        
-        ts::return_shared(greeting_obj);
-        ts::end(scenario);
-    }
+        ts::return_shared(greeting);
+    };
 
-    #[test]
-    fun test_update_greeting_text() {
-        let mut scenario = ts::begin(@0x1);
-        let ctx = ts::ctx(&mut scenario);
+    scenario.end();
+}
 
-        greeting::new(ctx);
+#[test]
+fun shared_greeting_can_be_updated() {
+    let mut scenario = ts::begin(ADMIN);
 
-        let mut greeting_obj = ts::take_shared<Greeting>(&scenario);
-        
-        // Update the greeting text
-        let new_text = string::utf8(b"Sui is awesome!");
-        greeting::update_text(&mut greeting_obj, new_text);
-        
-        // Verify the text was updated
-        assert_eq(greeting_obj.text, string::utf8(b"Sui is awesome!"));
-        
-        ts::return_shared(greeting_obj);
-        ts::end(scenario);
-    }
+    greeting::new(scenario.ctx());
 
-    #[test]
-    fun test_update_greeting_multiple_times() {
-        let mut scenario = ts::begin(@0x1);
-        let ctx = ts::ctx(&mut scenario);
+    scenario.next_tx(USER);
+    {
+        let mut greeting = scenario.take_shared<Greeting>();
 
-        greeting::new(ctx);
+        greeting.update_text(b"GM, Sui!".to_string());
+        assert!(greeting.text() == b"GM, Sui!".to_string());
 
-        let mut greeting_obj = ts::take_shared<Greeting>(&scenario);
-        
-        // First update
-        greeting::update_text(&mut greeting_obj, string::utf8(b"First update"));
-        assert_eq(greeting_obj.text, string::utf8(b"First update"));
-        
-        // Second update
-        greeting::update_text(&mut greeting_obj, string::utf8(b"Second update"));
-        assert_eq(greeting_obj.text, string::utf8(b"Second update"));
-        
-        // Third update
-        greeting::update_text(&mut greeting_obj, string::utf8(b"Final message"));
-        assert_eq(greeting_obj.text, string::utf8(b"Final message"));
-        
-        ts::return_shared(greeting_obj);
-        ts::end(scenario);
-    }
+        ts::return_shared(greeting);
+    };
 
-    #[test]
-    fun test_greeting_has_valid_id() {
-        let mut scenario = ts::begin(@0x1);
-        let ctx = ts::ctx(&mut scenario);
+    scenario.next_tx(ADMIN);
+    {
+        let greeting = scenario.take_shared<Greeting>();
+        assert!(greeting.text() == b"GM, Sui!".to_string());
 
-        greeting::new(ctx);
+        ts::return_shared(greeting);
+    };
 
-        let greeting_obj = ts::take_shared<Greeting>(&scenario);
-        
-        // Verify the greeting has a valid ID (non-zero address)
-        // The ID should be properly initialized by object::new
-        assert_eq(object::is_id_initialized(&greeting_obj.id), true);
-        
-        ts::return_shared(greeting_obj);
-        ts::end(scenario);
-    }
+    scenario.end();
+}
 
-    #[test]
-    fun test_update_with_empty_string() {
-        let mut scenario = ts::begin(@0x1);
-        let ctx = ts::ctx(&mut scenario);
+#[test]
+fun update_preserves_object_identity() {
+    let mut scenario = ts::begin(ADMIN);
 
-        greeting::new(ctx);
+    greeting::new(scenario.ctx());
 
-        let mut greeting_obj = ts::take_shared<Greeting>(&scenario);
-        
-        // Update with an empty string
-        let empty_string = string::utf8(b"");
-        greeting::update_text(&mut greeting_obj, empty_string);
-        assert_eq(greeting_obj.text, string::utf8(b""));
-        
-        ts::return_shared(greeting_obj);
-        ts::end(scenario);
-    }
+    scenario.next_tx(ADMIN);
+    let greeting_id;
+    {
+        let mut greeting = scenario.take_shared<Greeting>();
+        greeting_id = greeting.id();
 
-    #[test]
-    fun test_update_with_long_string() {
-        let mut scenario = ts::begin(@0x1);
-        let ctx = ts::ctx(&mut scenario);
+        greeting.update_text(string::utf8(b"Updated without replacing object"));
 
-        greeting::new(ctx);
+        ts::return_shared(greeting);
+    };
 
-        let mut greeting_obj = ts::take_shared<Greeting>(&scenario);
-        
-        // Update with a longer string
-        let long_text = string::utf8(b"This is a longer greeting message for testing purposes");
-        greeting::update_text(&mut greeting_obj, long_text);
-        assert_eq(greeting_obj.text, string::utf8(b"This is a longer greeting message for testing purposes"));
-        
-        ts::return_shared(greeting_obj);
-        ts::end(scenario);
-    }
+    scenario.next_tx(USER);
+    {
+        let greeting = scenario.take_shared_by_id<Greeting>(greeting_id);
 
+        assert!(greeting.id() == greeting_id);
+        assert!(greeting.text() == string::utf8(b"Updated without replacing object"));
+
+        ts::return_shared(greeting);
+    };
+
+    scenario.end();
 }

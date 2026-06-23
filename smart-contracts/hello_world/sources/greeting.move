@@ -17,4 +17,14 @@ module hello_world::greeting {
     public fun update_text(greeting: &mut Greeting, new_text: string::String) {
         greeting.text = new_text;
     }
+
+    #[test_only]
+    public fun text(greeting: &Greeting): string::String {
+        greeting.text
+    }
+
+    #[test_only]
+    public fun id(greeting: &Greeting): ID {
+        greeting.id.uid_to_inner()
+    }
 }
