@@ -16,3 +16,11 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+*/build/*
+*/traces/*
+*/.trace
+*/.coverage*
+*/Pub.*.toml
+
+
